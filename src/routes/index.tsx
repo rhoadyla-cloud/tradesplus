@@ -52,6 +52,14 @@ const fetchScanResults = createServerFn({ method: "GET" }).handler(
   },
 );
 
+/** Fetch all paper trades from the in-memory store. */
+const fetchPaperTrades = createServerFn({ method: "GET" }).handler(
+  async (): Promise<PaperTrade[]> => {
+    const { getPaperTrades } = await import("~/lib/paperTrades");
+    return getPaperTrades();
+  },
+);
+
 const emptyMarketResult: MarketDataResult = {
   quotes: [],
   errors: [],
@@ -60,26 +68,30 @@ const emptyMarketResult: MarketDataResult = {
 
 export const Route = createFileRoute("/")({
   loader: async () => {
-    const [businessName, marketData, scanData] = await Promise.all([
-      getBusinessName(),
-      fetchMarketData().catch((err) => {
-        console.error("[loader] Market data fetch failed:", err);
-        return emptyMarketResult;
-      }),
-      fetchScanResults().catch((err) => {
-        console.error("[loader] Scan failed:", err);
-        return { setups: [], quotes: [], scannedAt: 0 };
-      }),
-    ]);
-    return { businessName, marketData, scanData };
+    const [businessName, marketData, scanData, paperTrades] =
+      await Promise.all([
+        getBusinessName(),
+        fetchMarketData().catch((err) => {
+          console.error("[loader] Market data fetch failed:", err);
+          return emptyMarketResult;
+        }),
+        fetchScanResults().catch((err) => {
+          console.error("[loader] Scan failed:", err);
+          return { setups: [], quotes: [], scannedAt: 0 };
+        }),
+        fetchPaperTrades().catch((err) => {
+          console.error("[loader] Paper trades fetch failed:", err);
+          return [] as PaperTrade[];
+        }),
+      ]);
+    return { businessName, marketData, scanData, paperTrades };
   },
   component: Home,
 });
 
-const emptyTrades: PaperTrade[] = [];
-
 function Home() {
-  const { businessName, marketData, scanData } = Route.useLoaderData();
+  const { businessName, marketData, scanData, paperTrades } =
+    Route.useLoaderData();
   const watchlist = getWatchlist();
 
   // Prefer scan data (which includes its own quotes), fall back to marketData
@@ -111,7 +123,7 @@ function Home() {
       {/* Dashboard panels */}
       <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-2">
         <TradeSignals setups={setups} quotes={quotes} />
-        <PaperTradeLog trades={emptyTrades} />
+        <PaperTradeLog trades={paperTrades ?? []} />
       </div>
 
       <footer className="mt-12 text-center text-sm text-gray-400 dark:text-gray-600">
