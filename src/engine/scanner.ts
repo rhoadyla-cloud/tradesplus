@@ -7,6 +7,8 @@ import {
   detectMACrossover,
   detectVolumeSpike,
   findSupportResistance,
+  calculateMACD,
+  calculateBollingerBands,
 } from "~/engine/indicators";
 
 /** A single trade setup surfaced by the scanner */
@@ -83,11 +85,13 @@ export async function scanWatchlist(
       const lows = hist.candles.map((c) => c.low);
       const volumes = hist.candles.map((c) => c.volume);
 
-      if (closes.length < 22) return; // Need at least 22 bars for SMA(50) and MA crossover
+      if (closes.length < 35) return; // Need at least 35 bars for MACD(26,9)
 
       // --- Indicator calculations ---
       const rsi = calculateRSI(closes, 14);
-      const macd = detectMACrossover(closes, 9, 21);
+      const maCross = detectMACrossover(closes, 9, 21);
+      const macd = calculateMACD(closes);
+      const bbands = calculateBollingerBands(closes);
       const sma50 = calculateSMA(closes, 50);
       const sr = findSupportResistance(highs, lows, 20);
 
@@ -121,20 +125,47 @@ export async function scanWatchlist(
       }
 
       // MA crossover
-      if (macd.signal === "bullish" && macd.crossover) {
+      if (maCross.signal === "bullish" && maCross.crossover) {
         confidence += 30;
         reasons.push("Bullish MA crossover (9/21 EMA)");
         indicators.push("MA: bullish crossover");
-      } else if (macd.signal === "bearish" && macd.crossover) {
+      } else if (maCross.signal === "bearish" && maCross.crossover) {
         confidence -= 30;
         reasons.push("Bearish MA crossover (9/21 EMA)");
         indicators.push("MA: bearish crossover");
-      } else if (macd.signal === "bullish") {
+      } else if (maCross.signal === "bullish") {
         indicators.push("MA: bullish (no crossover)");
-      } else if (macd.signal === "bearish") {
+      } else if (maCross.signal === "bearish") {
         indicators.push("MA: bearish (no crossover)");
       } else {
         indicators.push("MA: none");
+      }
+
+      // MACD scoring
+      if (macd.crossover === "bullish") {
+        confidence += 20;
+        reasons.push("MACD bullish crossover");
+        indicators.push(`MACD: bullish cross (hist=${macd.histogram})`);
+      } else if (macd.crossover === "bearish") {
+        confidence -= 20;
+        reasons.push("MACD bearish crossover");
+        indicators.push(`MACD: bearish cross (hist=${macd.histogram})`);
+      } else {
+        const macdDir = macd.histogram > 0 ? "bullish" : "bearish";
+        indicators.push(`MACD: ${macdDir} (hist=${macd.histogram})`);
+      }
+
+      // Bollinger Bands scoring
+      if (bbands.position === "below") {
+        confidence += 15;
+        reasons.push("Price below lower Bollinger Band (oversold)");
+        indicators.push(`BB: below lower (${bbands.lower})`);
+      } else if (bbands.position === "above") {
+        confidence -= 15;
+        reasons.push("Price above upper Bollinger Band (overbought)");
+        indicators.push(`BB: above upper (${bbands.upper})`);
+      } else {
+        indicators.push(`BB: inside bands`);
       }
 
       // Volume spike + price near support
@@ -165,8 +196,8 @@ export async function scanWatchlist(
 
       // Determine signal
       let signal: "buy" | "sell" | "hold";
-      if (confidence >= 30) signal = "buy";
-      else if (confidence <= -30) signal = "sell";
+      if (confidence >= 20) signal = "buy";
+      else if (confidence <= -20) signal = "sell";
       else signal = "hold";
 
       // Clamp confidence to -100..100 for storage, use absolute value

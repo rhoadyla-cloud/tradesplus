@@ -143,6 +143,133 @@ export function detectVolumeSpike(
   return volume > avgVolume * threshold;
 }
 
+// ---------------------------------------------------------------------------
+// MACD
+// ---------------------------------------------------------------------------
+
+export interface MACDResult {
+  macdLine: number;
+  signalLine: number;
+  histogram: number;
+  crossover: "bullish" | "bearish" | "none";
+}
+
+/**
+ * Computes Moving Average Convergence Divergence (MACD).
+ * MACD Line = EMA(fast) - EMA(slow)
+ * Signal Line = EMA(MACD Line, signalPeriod)
+ * Histogram = MACD Line - Signal Line
+ *
+ * Crossover detection compares the current and previous bar's histogram:
+ * - Bullish: histogram crosses from negative to positive
+ * - Bearish: histogram crosses from positive to negative
+ */
+export function calculateMACD(
+  prices: number[],
+  fast: number = 12,
+  slow: number = 26,
+  signalPeriod: number = 9,
+): MACDResult {
+  const minLen = slow + signalPeriod;
+  if (prices.length < minLen) {
+    return { macdLine: 0, signalLine: 0, histogram: 0, crossover: "none" };
+  }
+
+  // Helper: full EMA series
+  function emaSeries(data: number[], period: number): number[] {
+    const alpha = 2 / (period + 1);
+    const result: number[] = [];
+    // Seed with SMA of first `period` values
+    let ema = data.slice(0, period).reduce((a, v) => a + v, 0) / period;
+    result.push(ema);
+    for (let i = period; i < data.length; i++) {
+      ema = (data[i] - ema) * alpha + ema;
+      result.push(ema);
+    }
+    return result;
+  }
+
+  const emaFast = emaSeries(prices, fast);
+  const emaSlow = emaSeries(prices, slow);
+
+  // Align: MACD line starts when both EMAs have values
+  const offset = slow - fast;
+  const macdSeries: number[] = [];
+  for (let i = 0; i < emaSlow.length; i++) {
+    macdSeries.push(emaFast[i + offset] - emaSlow[i]);
+  }
+
+  // Signal line = EMA of MACD series
+  const signalSeries = emaSeries(macdSeries, signalPeriod);
+
+  const macdLine = Math.round(macdSeries[macdSeries.length - 1] * 100) / 100;
+  const signalLine =
+    Math.round(signalSeries[signalSeries.length - 1] * 100) / 100;
+  const histogram = Math.round((macdLine - signalLine) * 100) / 100;
+
+  // Crossover: compare last two histogram values
+  const prevHistogram =
+    macdSeries[macdSeries.length - 2] - signalSeries[signalSeries.length - 2];
+  let crossover: "bullish" | "bearish" | "none" = "none";
+  if (prevHistogram <= 0 && histogram > 0) crossover = "bullish";
+  else if (prevHistogram >= 0 && histogram < 0) crossover = "bearish";
+
+  return { macdLine, signalLine, histogram, crossover };
+}
+
+// ---------------------------------------------------------------------------
+// Bollinger Bands
+// ---------------------------------------------------------------------------
+
+export interface BollingerBandsResult {
+  upper: number;
+  middle: number;
+  lower: number;
+  bandwidth: number;
+  position: "above" | "inside" | "below";
+}
+
+/**
+ * Computes Bollinger Bands.
+ * - middle = SMA(period)
+ * - upper / lower = middle ± stdDev * sample stddev
+ * - bandwidth = (upper - lower) / middle
+ * - position: "below" if price < lower (bullish reversal signal),
+ *   "above" if price > upper (bearish reversal signal), "inside" otherwise
+ */
+export function calculateBollingerBands(
+  prices: number[],
+  period: number = 20,
+  stdDev: number = 2,
+): BollingerBandsResult {
+  if (prices.length < period) {
+    return { upper: 0, middle: 0, lower: 0, bandwidth: 0, position: "inside" };
+  }
+
+  const slice = prices.slice(prices.length - period);
+  const middle = slice.reduce((a, v) => a + v, 0) / period;
+  const variance =
+    slice.reduce((a, v) => a + (v - middle) ** 2, 0) / (period - 1);
+  const stdev = Math.sqrt(variance);
+  const upper = middle + stdDev * stdev;
+  const lower = middle - stdDev * stdev;
+  const bandwidth = middle > 0 ? (upper - lower) / middle : 0;
+
+  const currentPrice = prices[prices.length - 1];
+  let position: "above" | "inside" | "below";
+  if (currentPrice < lower) position = "below";
+  else if (currentPrice > upper) position = "above";
+  else position = "inside";
+
+  return {
+    upper: Math.round(upper * 100) / 100,
+    middle: Math.round(middle * 100) / 100,
+    lower: Math.round(lower * 100) / 100,
+    bandwidth: Math.round(bandwidth * 10000) / 10000,
+    position,
+  };
+}
+
 /**
  * Identifies support and resistance levels from recent price data.
  * - Resistance = highest high in the lookback window
