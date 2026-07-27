@@ -1,16 +1,28 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "@tanstack/react-router";
 import type { TradeSetup } from "~/engine/scanner";
 import type { Quote } from "~/services/marketData";
+import type { AutoTraderStatus } from "~/engine/autoTrader";
 import { openPaperTrade } from "~/lib/paperTrades";
+import { setAutoTraderConfig, triggerAutoTrade } from "~/engine/autoTrader";
 
 export interface TradeSignalsProps {
   setups: TradeSetup[];
   quotes?: Quote[];
   loading?: boolean;
+  autoTraderStatus?: AutoTraderStatus;
 }
 
 type SignalFilter = "all" | "buy" | "sell" | "hold";
+
+/** Format a timestamp as a relative or absolute time string. */
+function fmtTime(ts: number): string {
+  if (ts === 0) return "never";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  return new Date(ts).toLocaleTimeString();
+}
 
 /**
  * Ranks day-trading opportunities and displays live quote data.
@@ -21,10 +33,43 @@ export function TradeSignals({
   setups,
   quotes,
   loading = false,
+  autoTraderStatus,
 }: TradeSignalsProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<SignalFilter>("all");
   const [openingTrade, setOpeningTrade] = useState<string | null>(null);
+  const [toggling, setToggling] = useState(false);
+
+  // Local state for auto-trader status so the UI updates instantly on toggle
+  const [status, setStatus] = useState<AutoTraderStatus | undefined>(
+    autoTraderStatus,
+  );
+
+  // Sync when loader data changes
+  useEffect(() => {
+    if (autoTraderStatus) setStatus(autoTraderStatus);
+  }, [autoTraderStatus]);
+
+  // 60-second auto-trader polling
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    // Clear any existing interval
+    if (intervalRef.current) clearInterval(intervalRef.current);
+
+    intervalRef.current = setInterval(async () => {
+      try {
+        await triggerAutoTrade();
+      } catch (err) {
+        console.error("[auto-trader] Poll failed:", err);
+      }
+      await router.invalidate();
+    }, 60_000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [router]);
 
   const handleOpenTrade = useCallback(
     async (setup: TradeSetup) => {
@@ -48,6 +93,19 @@ export function TradeSignals({
     },
     [router],
   );
+
+  const handleToggle = useCallback(async () => {
+    setToggling(true);
+    const newEnabled = !status?.config.enabled;
+    try {
+      const updated = await setAutoTraderConfig({ enabled: newEnabled });
+      setStatus(updated);
+    } catch (err) {
+      console.error("Failed to toggle auto-trader:", err);
+    } finally {
+      setToggling(false);
+    }
+  }, [status?.config.enabled]);
 
   if (loading) {
     return (
@@ -76,9 +134,81 @@ export function TradeSignals({
         )
       : null;
 
+  const enabled = status?.config.enabled ?? false;
+  const last = status?.lastRun;
+
+  // Build last-action summary string
+  const actions: string[] = [];
+  if (last && last.timestamp > 0) {
+    for (const o of last.opened) actions.push(`Opened ${o}`);
+    for (const c of last.closed) actions.push(`Closed ${c}`);
+  }
+  const summary = actions.length > 0 ? actions.join(" · ") : "No actions yet";
+
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
       <h2 className="mb-4 text-xl font-semibold">📊 Trade Signals</h2>
+
+      {/* ---- Auto-Trade Status Bar ---- */}
+      <div className="mb-4 rounded-lg border bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/60">
+        <div className="flex items-center justify-between gap-3">
+          {/* Left: status dot + label */}
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-3 w-3">
+              <span
+                className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  enabled ? "animate-ping bg-green-400" : ""
+                }`}
+              />
+              <span
+                className={`relative inline-flex h-3 w-3 rounded-full ${
+                  enabled ? "bg-green-500" : "bg-red-400"
+                }`}
+              />
+            </span>
+            <span
+              className={`text-sm font-semibold ${
+                enabled ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"
+              }`}
+            >
+              Auto-Trade: {enabled ? "ON" : "OFF"}
+            </span>
+          </div>
+
+          {/* Right: toggle switch */}
+          <label className="relative inline-flex cursor-pointer items-center">
+            <input
+              type="checkbox"
+              className="peer sr-only"
+              checked={enabled}
+              onChange={handleToggle}
+              disabled={toggling}
+            />
+            <div className="h-6 w-11 rounded-full bg-gray-300 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-indigo-600 peer-checked:after:translate-x-full peer-focus:ring-2 peer-focus:ring-indigo-300 dark:bg-gray-600 dark:peer-focus:ring-indigo-700" />
+          </label>
+        </div>
+
+        {/* Last run info */}
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+          <span>
+            Last run:{" "}
+            <span className="font-mono text-gray-700 dark:text-gray-300">
+              {fmtTime(last?.timestamp ?? 0)}
+            </span>
+          </span>
+          <span className="hidden sm:inline">|</span>
+          <span className="max-w-md truncate">{summary}</span>
+        </div>
+
+        {/* Last-run errors */}
+        {last && last.errors.length > 0 && (
+          <div className="mt-1.5 text-xs text-red-600 dark:text-red-400">
+            {last.errors.map((e, i) => (
+              <div key={i}>⚠ {e}</div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Scanned setups */}
       {hasSetups ? (
