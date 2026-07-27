@@ -6,6 +6,7 @@ import { PaperTradeLog } from "~/components/PaperTradeLog";
 import type { PaperTrade } from "~/components/PaperTradeLog";
 import { TradeSignals } from "~/components/TradeSignals";
 import type { TradeSetup } from "~/engine/scanner";
+import type { AutoTraderStatus } from "~/engine/autoTrader";
 import { getWatchlist } from "~/lib/watchlist";
 import type { MarketDataResult } from "~/services/marketData";
 
@@ -60,6 +61,14 @@ const fetchPaperTrades = createServerFn({ method: "GET" }).handler(
   },
 );
 
+/** Fetch current auto-trader status (config + last run info). */
+const fetchAutoTraderStatus = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AutoTraderStatus> => {
+    const { getAutoTraderStatus } = await import("~/engine/autoTrader");
+    return getAutoTraderStatus();
+  },
+);
+
 const emptyMarketResult: MarketDataResult = {
   quotes: [],
   errors: [],
@@ -68,7 +77,7 @@ const emptyMarketResult: MarketDataResult = {
 
 export const Route = createFileRoute("/")({
   loader: async () => {
-    const [businessName, marketData, scanData, paperTrades] =
+    const [businessName, marketData, scanData, paperTrades, autoTraderStatus] =
       await Promise.all([
         getBusinessName(),
         fetchMarketData().catch((err) => {
@@ -83,14 +92,26 @@ export const Route = createFileRoute("/")({
           console.error("[loader] Paper trades fetch failed:", err);
           return [] as PaperTrade[];
         }),
+        fetchAutoTraderStatus().catch((err) => {
+          console.error("[loader] Auto-trader status fetch failed:", err);
+          return {
+            config: {
+              minConfidence: 20,
+              maxOpenTrades: 5,
+              sharesPerTrade: 100,
+              enabled: false,
+            },
+            lastRun: { timestamp: 0, opened: [], closed: [], errors: [] },
+          } satisfies AutoTraderStatus;
+        }),
       ]);
-    return { businessName, marketData, scanData, paperTrades };
+    return { businessName, marketData, scanData, paperTrades, autoTraderStatus };
   },
   component: Home,
 });
 
 function Home() {
-  const { businessName, marketData, scanData, paperTrades } =
+  const { businessName, marketData, scanData, paperTrades, autoTraderStatus } =
     Route.useLoaderData();
   const watchlist = getWatchlist();
 
@@ -122,7 +143,11 @@ function Home() {
 
       {/* Dashboard panels */}
       <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-2">
-        <TradeSignals setups={setups} quotes={quotes} />
+        <TradeSignals
+          setups={setups}
+          quotes={quotes}
+          autoTraderStatus={autoTraderStatus}
+        />
         <PaperTradeLog trades={paperTrades ?? []} />
       </div>
 
