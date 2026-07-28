@@ -91,7 +91,12 @@ export const Route = createFileRoute("/")({
         fetchPaperTrades().catch((err) => {
           console.error("[loader] Paper trades fetch failed:", err);
           return [] as PaperTrade[];
-        }),
+        }).then((trades) =>
+          // Filter out any malformed entries (e.g., missing entryPrice) to prevent SSR crashes
+          trades.filter(
+            (t) => t && typeof t.entryPrice === "number" && typeof t.symbol === "string",
+          ),
+        ),
         fetchAutoTraderStatus().catch((err) => {
           console.error("[loader] Auto-trader status fetch failed:", err);
           return {

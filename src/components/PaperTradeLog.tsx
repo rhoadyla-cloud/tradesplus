@@ -77,33 +77,42 @@ export function PaperTradeLog({ trades }: PaperTradeLogProps) {
                 </tr>
               </thead>
               <tbody>
-                {trades.map((t) => {
-                  const isClosing = closingId === t.id;
-                  return (
-                    <tr
-                      key={t.id}
-                      className="border-b border-gray-100 dark:border-gray-800"
-                    >
-                      <td className="py-2 font-medium">{t.symbol}</td>
-                      <td className="py-2">
-                        <span
-                          className={`rounded-full px-1.5 py-0.5 text-xs font-semibold uppercase ${
-                            t.direction === "long"
-                              ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-                              : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-                          }`}
-                        >
-                          {t.direction}
-                        </span>
-                      </td>
-                      <td className="py-2 text-right font-mono">
-                        ${t.entryPrice.toFixed(2)}
-                      </td>
-                      <td className="py-2 text-right font-mono">
-                        {t.exitPrice !== undefined
-                          ? `$${t.exitPrice.toFixed(2)}`
-                          : "—"}
-                      </td>
+                {trades
+                  .filter(
+                    (t) =>
+                      t &&
+                      typeof t.entryPrice === "number" &&
+                      typeof t.symbol === "string",
+                  )
+                  .map((t) => {
+                    const isClosing = closingId === t.id;
+                    return (
+                      <tr
+                        key={t.id}
+                        className="border-b border-gray-100 dark:border-gray-800"
+                      >
+                        <td className="py-2 font-medium">{t.symbol ?? "—"}</td>
+                        <td className="py-2">
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-xs font-semibold uppercase ${
+                              t.direction === "long"
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                            }`}
+                          >
+                            {t.direction ?? "—"}
+                          </span>
+                        </td>
+                        <td className="py-2 text-right font-mono">
+                          $
+                          {t.entryPrice?.toFixed(2) ?? "—"}
+                        </td>
+                        <td className="py-2 text-right font-mono">
+                          {t.exitPrice !== undefined &&
+                          t.exitPrice !== null
+                            ? `$${t.exitPrice.toFixed(2)}`
+                            : "—"}
+                        </td>
                       <td
                         className={`py-2 text-right font-mono ${
                           t.pnl !== undefined
