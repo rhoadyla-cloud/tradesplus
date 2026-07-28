@@ -22,7 +22,7 @@ export function PaperTradeLog({ trades }: PaperTradeLogProps) {
     async (id: string) => {
       setClosingId(id);
       try {
-        await closePaperTrade({ id });
+        await closePaperTrade({ data: { id } });
         await router.invalidate();
       } catch (err) {
         console.error("Failed to close trade:", err);

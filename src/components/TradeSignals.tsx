@@ -76,14 +76,14 @@ export function TradeSignals({
       setOpeningTrade(setup.symbol);
       try {
         const direction = setup.signal === "sell" ? "short" : "long";
-        await openPaperTrade({
+        await openPaperTrade({ data: {
           symbol: setup.symbol,
           direction,
           entryPrice: setup.entryPrice,
           stopLoss: setup.stopLoss,
           takeProfit: setup.takeProfit,
           shares: 100,
-        });
+        }});
         await router.invalidate();
       } catch (err) {
         console.error("Failed to open paper trade:", err);
@@ -98,7 +98,7 @@ export function TradeSignals({
     setToggling(true);
     const newEnabled = !status?.config.enabled;
     try {
-      const updated = await setAutoTraderConfig({ enabled: newEnabled });
+      const updated = await setAutoTraderConfig({ data: { enabled: newEnabled } });
       setStatus(updated);
     } catch (err) {
       console.error("Failed to toggle auto-trader:", err);
