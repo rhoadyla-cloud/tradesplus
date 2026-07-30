@@ -188,7 +188,7 @@ export function PaperTradeLog({
                         <button
                           onClick={() => handleCloseAlpacaPosition(p.symbol)}
                           disabled={isClosing}
-                          className="rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                          className="rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
                         >
                           {isClosing ? "Closing…" : "Close"}
                         </button>
@@ -339,7 +339,7 @@ export function PaperTradeLog({
                           <button
                             onClick={() => handleCloseTrade(t.id)}
                             disabled={isClosing}
-                            className="rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                            className="rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
                           >
                             {isClosing ? "Closing…" : "Close"}
                           </button>

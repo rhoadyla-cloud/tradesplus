@@ -202,7 +202,7 @@ export function TradeSignals({
           <button
             onClick={handleModeToggle}
             disabled={modeToggling}
-            className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+            className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
           >
             {modeToggling
               ? "Switching…"
@@ -400,7 +400,7 @@ export function TradeSignals({
                     <button
                       onClick={() => handleOpenTrade(s)}
                       disabled={openingTrade === s.symbol}
-                      className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${
                         tradingMode === "alpaca"
                           ? "bg-purple-600 hover:bg-purple-700"
                           : "bg-indigo-600 hover:bg-indigo-700"
