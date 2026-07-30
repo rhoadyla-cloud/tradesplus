@@ -7,8 +7,19 @@
  */
 
 import { createServerFn } from "@tanstack/react-start";
-import { Alpaca } from "@alpacahq/alpaca-trade-api";
-import type { trading } from "@alpacahq/alpaca-trade-api";
+import type AlpacaClass from "@alpacahq/alpaca-trade-api";
+
+// Minimal position shape used by mapPosition — avoids importing the full SDK.
+interface AlpacaRawPosition {
+  symbol: string;
+  qty: unknown;
+  avgEntryPrice: unknown;
+  marketValue: unknown;
+  unrealizedPl: unknown;
+  costBasis: unknown;
+  currentPrice: unknown;
+  side?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -54,10 +65,11 @@ export type AlpacaResult<T> =
 // Client singleton
 // ---------------------------------------------------------------------------
 
-let _client: Alpaca | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _client: any = null;
 let _initError: string | null = null;
 
-function getClient(): Alpaca | null {
+async function getClient(): Promise<any> {
   if (_client) return _client;
   if (_initError) return null;
 
@@ -71,6 +83,8 @@ function getClient(): Alpaca | null {
   }
 
   try {
+    // Dynamic import keeps the Alpaca SDK out of the client bundle
+    const { Alpaca } = await import("@alpacahq/alpaca-trade-api");
     _client = new Alpaca({ keyId, secret, paper });
     return _client;
   } catch (err: unknown) {
@@ -99,7 +113,7 @@ function parseNumber(val: unknown, fallback = 0): number {
   return fallback;
 }
 
-function mapPosition(p: trading.Position): AlpacaPosition {
+function mapPosition(p: AlpacaRawPosition): AlpacaPosition {
   const qty = parseNumber(p.qty);
   const avgEntryPrice = parseNumber(p.avgEntryPrice);
   const marketValue = parseNumber(p.marketValue);
@@ -124,7 +138,7 @@ function mapPosition(p: trading.Position): AlpacaPosition {
   };
 }
 
-function toSide(direction: "long" | "short"): trading.OrderSide {
+function toSide(direction: "long" | "short"): "buy" | "sell" {
   return direction === "long" ? "buy" : "sell";
 }
 
@@ -138,20 +152,21 @@ function toSide(direction: "long" | "short"): trading.OrderSide {
  */
 export async function placeOrder(
   params: PlaceOrderParams,
-): Promise<AlpacaResult<trading.Order>> {
-  const alpaca = getClient();
+): Promise<AlpacaResult<any>> {
+  const alpaca = await getClient();
   if (!alpaca) {
-    return { success: false, error: _initError ?? "Alpaca client not available" };
-  }
+      return { success: false, error: _initError ?? "Alpaca client not available" };
+    }
 
-  try {
-    const side = toSide(params.direction);
-    const notionalAmount = params.entryPrice
-      ? params.entryPrice * params.shares
-      : undefined;
+    try {
+      const side = toSide(params.direction);
+      const notionalAmount = params.entryPrice
+        ? params.entryPrice * params.shares
+        : undefined;
 
-    let order: trading.Order;
-    if (params.entryPrice !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let order: any;
+      if (params.entryPrice !== undefined) {
       order = await alpaca.trading.orders.limit({
         symbol: params.symbol,
         qty: params.shares,
@@ -184,8 +199,8 @@ export async function placeOrder(
  */
 export async function closePosition(
   symbol: string,
-): Promise<AlpacaResult<trading.Order>> {
-  const alpaca = getClient();
+): Promise<AlpacaResult<any>> {
+  const alpaca = await getClient();
   if (!alpaca) {
     return { success: false, error: _initError ?? "Alpaca client not available" };
   }
@@ -207,7 +222,7 @@ export async function closePosition(
  * Fetch all current positions from Alpaca.
  */
 export async function getPositions(): Promise<AlpacaResult<AlpacaPosition[]>> {
-  const alpaca = getClient();
+  const alpaca = await getClient();
   if (!alpaca) {
     return { success: false, error: _initError ?? "Alpaca client not available" };
   }
@@ -226,7 +241,7 @@ export async function getPositions(): Promise<AlpacaResult<AlpacaPosition[]>> {
  * Fetch the account summary from Alpaca.
  */
 export async function getAccount(): Promise<AlpacaResult<AlpacaAccount>> {
-  const alpaca = getClient();
+  const alpaca = await getClient();
   if (!alpaca) {
     return { success: false, error: _initError ?? "Alpaca client not available" };
   }
@@ -260,7 +275,7 @@ export async function getAccount(): Promise<AlpacaResult<AlpacaAccount>> {
 export async function validateConnection(): Promise<
   { success: true } | { success: false; error: string }
 > {
-  const alpaca = getClient();
+  const alpaca = await getClient();
   if (!alpaca) {
     return { success: false, error: _initError ?? "Alpaca client not available" };
   }
