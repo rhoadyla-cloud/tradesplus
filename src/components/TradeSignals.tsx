@@ -3,14 +3,18 @@ import { useRouter } from "@tanstack/react-router";
 import type { TradeSetup } from "~/engine/scanner";
 import type { Quote } from "~/services/marketData";
 import type { AutoTraderStatus } from "~/engine/autoTrader";
+import type { TradingMode } from "~/lib/tradingMode";
 import { openPaperTrade } from "~/lib/paperTrades";
 import { setAutoTraderConfig, triggerAutoTrade } from "~/engine/autoTrader";
+import { setTradingMode as setModeRpc } from "~/lib/tradingMode";
 
 export interface TradeSignalsProps {
   setups: TradeSetup[];
   quotes?: Quote[];
   loading?: boolean;
   autoTraderStatus?: AutoTraderStatus;
+  tradingMode?: TradingMode;
+  alpacaConnected?: boolean;
 }
 
 type SignalFilter = "all" | "buy" | "sell" | "hold";
@@ -34,11 +38,14 @@ export function TradeSignals({
   quotes,
   loading = false,
   autoTraderStatus,
+  tradingMode = "paper",
+  alpacaConnected = false,
 }: TradeSignalsProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<SignalFilter>("all");
   const [openingTrade, setOpeningTrade] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
+  const [modeToggling, setModeToggling] = useState(false);
 
   // Local state for auto-trader status so the UI updates instantly on toggle
   const [status, setStatus] = useState<AutoTraderStatus | undefined>(
@@ -54,7 +61,6 @@ export function TradeSignals({
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    // Clear any existing interval
     if (intervalRef.current) clearInterval(intervalRef.current);
 
     intervalRef.current = setInterval(async () => {
@@ -107,6 +113,19 @@ export function TradeSignals({
     }
   }, [status?.config.enabled]);
 
+  const handleModeToggle = useCallback(async () => {
+    setModeToggling(true);
+    const newMode: TradingMode = tradingMode === "paper" ? "alpaca" : "paper";
+    try {
+      await setModeRpc({ data: newMode });
+      await router.invalidate();
+    } catch (err) {
+      console.error("Failed to toggle trading mode:", err);
+    } finally {
+      setModeToggling(false);
+    }
+  }, [tradingMode, router]);
+
   if (loading) {
     return (
       <section className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
@@ -145,9 +164,54 @@ export function TradeSignals({
   }
   const summary = actions.length > 0 ? actions.join(" · ") : "No actions yet";
 
+  const buttonLabel =
+    tradingMode === "alpaca"
+      ? "🏦 Place Order"
+      : "📝 Open Paper Trade";
+
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
       <h2 className="mb-4 text-xl font-semibold">📊 Trade Signals</h2>
+
+      {/* ---- Trading Mode Selector ---- */}
+      <div className="mb-4 rounded-lg border bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/60">
+        <div className="flex items-center justify-between gap-3">
+          {/* Left: mode indicator */}
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-3 w-3">
+              <span
+                className={`relative inline-flex h-3 w-3 rounded-full ${
+                  tradingMode === "alpaca"
+                    ? alpacaConnected
+                      ? "bg-green-500"
+                      : "bg-red-400"
+                    : "bg-blue-500"
+                }`}
+              />
+            </span>
+            <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              {tradingMode === "alpaca"
+                ? alpacaConnected
+                  ? "🏦 Alpaca Connected"
+                  : "🏦 Alpaca (no keys)"
+                : "📝 Paper Trading"}
+            </span>
+          </div>
+
+          {/* Right: mode toggle */}
+          <button
+            onClick={handleModeToggle}
+            disabled={modeToggling}
+            className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+          >
+            {modeToggling
+              ? "Switching…"
+              : tradingMode === "paper"
+                ? "🏦 Switch to Alpaca"
+                : "📝 Switch to Paper"}
+          </button>
+        </div>
+      </div>
 
       {/* ---- Auto-Trade Status Bar ---- */}
       <div className="mb-4 rounded-lg border bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/60">
@@ -331,16 +395,20 @@ export function TradeSignals({
                     </div>
                   )}
 
-                  {/* Open Paper Trade button */}
+                  {/* Open Trade button */}
                   <div className="mt-3 border-t border-gray-100 pt-2 dark:border-gray-800">
                     <button
                       onClick={() => handleOpenTrade(s)}
                       disabled={openingTrade === s.symbol}
-                      className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                        tradingMode === "alpaca"
+                          ? "bg-purple-600 hover:bg-purple-700"
+                          : "bg-indigo-600 hover:bg-indigo-700"
+                      }`}
                     >
                       {openingTrade === s.symbol
                         ? "Opening…"
-                        : "📝 Open Paper Trade"}
+                        : buttonLabel}
                     </button>
                   </div>
                 </li>

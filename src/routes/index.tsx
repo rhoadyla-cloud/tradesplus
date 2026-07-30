@@ -8,6 +8,8 @@ import { TradeSignals } from "~/components/TradeSignals";
 import type { TradeSetup } from "~/engine/scanner";
 import type { AutoTraderStatus } from "~/engine/autoTrader";
 import { getWatchlist } from "~/lib/watchlist";
+import type { TradingMode } from "~/lib/tradingMode";
+import type { AlpacaPosition, AlpacaAccount } from "~/services/alpacaBroker";
 import type { MarketDataResult } from "~/services/marketData";
 
 // Read the (optional) business name at request time so the placeholder can be
@@ -69,6 +71,37 @@ const fetchAutoTraderStatus = createServerFn({ method: "GET" }).handler(
   },
 );
 
+/** Fetch current trading mode. */
+const fetchTradingMode = createServerFn({ method: "GET" }).handler(
+  async (): Promise<TradingMode> => {
+    const { _getTradingMode } = await import("~/lib/tradingMode");
+    return _getTradingMode();
+  },
+);
+
+/** Fetch Alpaca positions (for the loader). */
+const fetchAlpacaData = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{
+    positions: AlpacaPosition[];
+    account: AlpacaAccount | null;
+    connected: boolean;
+  }> => {
+    const { hasKeys, getPositions, getAccount } = await import("~/services/alpacaBroker");
+    if (!hasKeys()) {
+      return { positions: [], account: null, connected: false };
+    }
+    const [posResult, accResult] = await Promise.all([
+      getPositions(),
+      getAccount(),
+    ]);
+    return {
+      positions: posResult.success ? posResult.data : [],
+      account: accResult.success ? accResult.data : null,
+      connected: posResult.success && accResult.success,
+    };
+  },
+);
+
 const emptyMarketResult: MarketDataResult = {
   quotes: [],
   errors: [],
@@ -77,47 +110,77 @@ const emptyMarketResult: MarketDataResult = {
 
 export const Route = createFileRoute("/")({
   loader: async () => {
-    const [businessName, marketData, scanData, paperTrades, autoTraderStatus] =
-      await Promise.all([
-        getBusinessName(),
-        fetchMarketData().catch((err) => {
-          console.error("[loader] Market data fetch failed:", err);
-          return emptyMarketResult;
-        }),
-        fetchScanResults().catch((err) => {
-          console.error("[loader] Scan failed:", err);
-          return { setups: [], quotes: [], scannedAt: 0 };
-        }),
-        fetchPaperTrades().catch((err) => {
-          console.error("[loader] Paper trades fetch failed:", err);
-          return [] as PaperTrade[];
-        }).then((trades) =>
-          // Filter out any malformed entries (e.g., missing entryPrice) to prevent SSR crashes
-          trades.filter(
-            (t) => t && typeof t.entryPrice === "number" && typeof t.symbol === "string",
-          ),
+    const [
+      businessName,
+      marketData,
+      scanData,
+      paperTrades,
+      autoTraderStatus,
+      tradingMode,
+      alpacaData,
+    ] = await Promise.all([
+      getBusinessName(),
+      fetchMarketData().catch((err) => {
+        console.error("[loader] Market data fetch failed:", err);
+        return emptyMarketResult;
+      }),
+      fetchScanResults().catch((err) => {
+        console.error("[loader] Scan failed:", err);
+        return { setups: [], quotes: [], scannedAt: 0 };
+      }),
+      fetchPaperTrades().catch((err) => {
+        console.error("[loader] Paper trades fetch failed:", err);
+        return [] as PaperTrade[];
+      }).then((trades) =>
+        // Filter out any malformed entries (e.g., missing entryPrice) to prevent SSR crashes
+        trades.filter(
+          (t) => t && typeof t.entryPrice === "number" && typeof t.symbol === "string",
         ),
-        fetchAutoTraderStatus().catch((err) => {
-          console.error("[loader] Auto-trader status fetch failed:", err);
-          return {
-            config: {
-              minConfidence: 20,
-              maxOpenTrades: 5,
-              sharesPerTrade: 100,
-              enabled: false,
-            },
-            lastRun: { timestamp: 0, opened: [], closed: [], errors: [] },
-          } satisfies AutoTraderStatus;
-        }),
-      ]);
-    return { businessName, marketData, scanData, paperTrades, autoTraderStatus };
+      ),
+      fetchAutoTraderStatus().catch((err) => {
+        console.error("[loader] Auto-trader status fetch failed:", err);
+        return {
+          config: {
+            minConfidence: 20,
+            maxOpenTrades: 5,
+            sharesPerTrade: 100,
+            enabled: false,
+          },
+          lastRun: { timestamp: 0, opened: [], closed: [], errors: [] },
+        } satisfies AutoTraderStatus;
+      }),
+      fetchTradingMode().catch((err) => {
+        console.error("[loader] Trading mode fetch failed:", err);
+        return "paper" as TradingMode;
+      }),
+      fetchAlpacaData().catch((err) => {
+        console.error("[loader] Alpaca data fetch failed:", err);
+        return { positions: [], account: null, connected: false };
+      }),
+    ]);
+    return {
+      businessName,
+      marketData,
+      scanData,
+      paperTrades,
+      autoTraderStatus,
+      tradingMode,
+      alpacaData,
+    };
   },
   component: Home,
 });
 
 function Home() {
-  const { businessName, marketData, scanData, paperTrades, autoTraderStatus } =
-    Route.useLoaderData();
+  const {
+    businessName,
+    marketData,
+    scanData,
+    paperTrades,
+    autoTraderStatus,
+    tradingMode,
+    alpacaData,
+  } = Route.useLoaderData();
   const watchlist = getWatchlist();
 
   // Prefer scan data (which includes its own quotes), fall back to marketData
@@ -152,8 +215,16 @@ function Home() {
           setups={setups}
           quotes={quotes}
           autoTraderStatus={autoTraderStatus}
+          tradingMode={tradingMode}
+          alpacaConnected={alpacaData?.connected ?? false}
         />
-        <PaperTradeLog trades={paperTrades ?? []} />
+        <PaperTradeLog
+          trades={paperTrades ?? []}
+          tradingMode={tradingMode}
+          alpacaPositions={alpacaData?.positions ?? []}
+          alpacaAccount={alpacaData?.account ?? null}
+          alpacaConnected={alpacaData?.connected ?? false}
+        />
       </div>
 
       <footer className="mt-12 text-center text-sm text-gray-400 dark:text-gray-600">
